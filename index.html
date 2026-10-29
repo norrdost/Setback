@@ -63,7 +63,7 @@ button.picked { background:var(--ink); color:var(--bg); }
         <button class="alt" data-n="4">4</button>
       </div>
       <label>Names (optional, comma-separated)</label>
-      <input id="names" placeholder="Ana, Ben, Cy, Dee">
+      <input id="names">
       <div style="margin-top:12px"><button id="start" disabled>Start game</button></div>
     </div>
 
@@ -236,11 +236,12 @@ async function walkForward(p, n) {
   let cur = p.pos;
   for (let k = 0; k < n; k++) {
     cur++;
-    if (cur >= FINISH) { won = true; path.push(FINISH); break; }
     path.push(cur);
   }
   await animatePath(p, path);
-  p.pos = won ? FINISH : cur;
+  p.pos = cur;
+  // Crossing the Finish line wins, but the piece still plays out the rest of the roll.
+  if (cur >= FINISH) won = true;
 }
 
 async function rollDice() {
