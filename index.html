@@ -13,7 +13,7 @@
 body { margin:0; font-family: Georgia, "Didot", "Times New Roman", serif; background:var(--bg); color:var(--ink); padding: env(safe-area-inset-top,0px) 12px env(safe-area-inset-bottom,0px); }
 h1 { margin: 12px 0 4px; font-size: 2.1rem; font-weight: normal; letter-spacing: 2px; text-align:center; }
 .sub { margin:0 0 14px; opacity:.75; font-size:.95rem; font-style: italic; text-align:center; }
-.wrap { max-width: 920px; margin: 0 auto; display:grid; grid-template-columns: minmax(0,1fr) 300px; gap:16px; }
+.wrap { max-width: 1060px; margin: 0 auto; display:grid; grid-template-columns: minmax(0,1fr) 300px; gap:16px; }
 @media (max-width: 760px) { .wrap { grid-template-columns: 1fr; } }
 .card { background:var(--card); border:2px solid var(--line); border-radius:6px; padding:14px; box-shadow: 4px 4px 0 var(--line); }
 svg#board { width:100%; height:auto; display:block; }
@@ -45,7 +45,7 @@ button.picked { background:var(--ink); color:var(--bg); }
 
 <div class="wrap">
   <div class="card">
-    <svg id="board" viewBox="0 0 600 660" role="img" aria-label="Game board"></svg>
+    <svg id="board" viewBox="55 65 490 520" role="img" aria-label="Game board"></svg>
     <div class="legend">
       <span style="--c:#b5532f">Setback</span>
       <span style="--c:#9bb08a">Smile</span>
@@ -63,8 +63,8 @@ button.picked { background:var(--ink); color:var(--bg); }
         <button class="alt" data-n="4">4</button>
       </div>
       <label>Names (optional, comma-separated)</label>
-      <input id="names" placeholder="">
-      <div style="margin-top:12px"><button id="start">Start game</button></div>
+      <input id="names" placeholder="Ana, Ben, Cy, Dee">
+      <div style="margin-top:12px"><button id="start" disabled>Start game</button></div>
     </div>
 
     <div id="game" hidden>
@@ -340,6 +340,7 @@ document.querySelectorAll("#setup [data-n]").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("#setup [data-n]").forEach(b => b.classList.remove("picked"));
     btn.classList.add("picked");
+    document.getElementById("start").disabled = false;
   });
 });
 document.getElementById("start").addEventListener("click", startGame);
