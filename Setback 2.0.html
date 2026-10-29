@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Setback 2.0</title>
+<style>
+:root { --bg:#eef8ea; --ink:#2f3d4a; --card:#fdfcf4; --rust:#f0786a; --teal:#3aaea0; --mustard:#f6c444; --line:#b9d9c2; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg:#1f2b2a; --ink:#f1f7ee; --card:#2a3a38; --rust:#f5938a; --teal:#6fcfc2; --mustard:#f8d572; --line:#3f5a55; }
+}
+* { box-sizing: border-box; }
+body { margin:0; font-family: Georgia, "Didot", "Times New Roman", serif; background:var(--bg); color:var(--ink); padding: env(safe-area-inset-top,0px) 12px env(safe-area-inset-bottom,0px); }
+h1 { margin: 12px 0 4px; font-size: 2.1rem; font-weight: normal; letter-spacing: 2px; text-align:center; }
+.sub { margin:0 0 14px; opacity:.75; font-size:.95rem; font-style: italic; text-align:center; }
+.wrap { max-width: 920px; margin: 0 auto; display:grid; grid-template-columns: minmax(0,1fr) 300px; gap:16px; }
+@media (max-width: 760px) { .wrap { grid-template-columns: 1fr; } }
+.card { background:var(--card); border:2px solid var(--line); border-radius:6px; padding:14px; box-shadow: 4px 4px 0 var(--line); }
+svg#board { width:100%; height:auto; display:block; }
+.players { display:flex; flex-direction:column; gap:8px; }
+.player { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:4px; border:2px solid transparent; }
+.player.active { border-color: var(--ink); background: rgba(0,0,0,.03); }
+.dot { width:14px; height:14px; border-radius:50%; flex:0 0 14px; border:1px solid var(--ink); }
+.pname { font-weight:bold; flex:1; }
+.pmeta { font-size:.85rem; opacity:.8; }
+button { font: inherit; border:2px solid var(--ink); border-radius:4px; padding:10px 14px; cursor:pointer; background:var(--ink); color:var(--bg); font-weight:bold; }
+button:disabled { opacity:.4; cursor:default; }
+button.alt { background:transparent; color:var(--ink); }
+button.picked { background:var(--ink); color:var(--bg); }
+.dice { font-size:1.6rem; font-weight:bold; text-align:center; margin:8px 0; min-height:2.4rem; }
+.row { display:flex; gap:8px; flex-wrap:wrap; }
+.row > button { flex:1; }
+.log { height: 220px; overflow-y:auto; font-size:.9rem; line-height:1.45; margin-top:10px; }
+.log div { padding:3px 0; border-bottom:1px dashed var(--line); }
+.legend { font-size:.85rem; display:flex; gap:12px; flex-wrap:wrap; margin-top:8px; justify-content:center; }
+.legend span::before { content:""; display:inline-block; width:12px; height:12px; margin-right:5px; vertical-align:middle; background: var(--c); border:1px solid var(--ink); }
+.banner { text-align:center; font-weight:bold; font-size:1.1rem; min-height:1.6rem; margin:6px 0; }
+.setup label { display:block; margin:8px 0 4px; font-size:.9rem; }
+.setup input { width:100%; padding:8px; border-radius:4px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font:inherit; }
+</style>
+</head>
+<body>
+<h1>Setback 2.0</h1>
+<p class="sub">Climb the ring. Avoid the setbacks. Get past the top.</p>
+
+<div class="wrap">
+  <div class="card">
+    <svg id="board" viewBox="0 0 600 660" role="img" aria-label="Game board"></svg>
+    <div class="legend">
+      <span style="--c:#b5532f">Setback</span>
+      <span style="--c:#9bb08a">Jump</span>
+      <span style="--c:#e0a526">Finish</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="setup" class="setup">
+      <label>Number of players</label>
+      <div class="row">
+        <button class="alt picked" data-n="2">2</button>
+        <button class="alt" data-n="3">3</button>
+        <button class="alt" data-n="4">4</button>
+      </div>
+      <label>Names (optional, comma-separated)</label>
+      <input id="names" placeholder="Ana, Ben, Cy, Dee">
+      <div style="margin-top:12px"><button id="start">Start game</button></div>
+    </div>
+
+    <div id="game" hidden>
+      <div id="banner" class="banner"></div>
+      <div class="players" id="players"></div>
+      <div class="dice" id="dice">&nbsp;</div>
+      <div class="row">
+        <button id="roll">Roll dice</button>
+        <button class="alt" id="restart">New game</button>
+      </div>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const COLORS = ["#f0786a", "#3aaea0", "#f6c444", "#a99be0"];
+const INK = "#2f3d4a";
+const FINISH = 37;        // ring of 37 squares: square 0 is Start, squares 1-36 are landable, FINISH is the top
+const N = FINISH;
+const SETBACKS = 18;
+const JUMPS = 9;
+const NORMALS = 9;
+const STEP_MS = 170;
+const CX = 300, CY = 330, R = 200;
+
+let setbacks = new Set(); // squares that are Setbacks
+let jumps = new Set();    // squares that are Jumps
+let players = [];
+let turn = 0, won = false, rolled = false, animating = false;
+let pendingSpecial = false, pendingKind = "";
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function rand(n) { return Math.floor(Math.random() * n); }
+
+// Jumps and Normals never touch each other. Setbacks can touch anything.
+// Build a row of 36 squares: 18 "free" slots (Jump or Normal) separated by at least one Setback,
+// with one extra Setback inserted at a random point. Then assign Jumps to 9 of the free slots.
+function generateBoard() {
+  let cells = ["N"];
+  for (let i = 0; i < 17; i++) cells.push("S", "N");
+  cells.splice(rand(36), 0, "S");
+  const free = [];
+  cells.forEach((c, i) => { if (c === "N") free.push(i); });
+  for (let i = free.length - 1; i > 0; i--) { const j = rand(i + 1); [free[i], free[j]] = [free[j], free[i]]; }
+  setbacks = new Set(); jumps = new Set();
+  cells.forEach((c, i) => { if (c === "S") setbacks.add(i + 1); });
+  free.slice(0, JUMPS).forEach(i => jumps.add(i + 1));
+}
+
+function tileXY(index, radius) {
+  const a = -Math.PI / 2 + index * (2 * Math.PI / N);
+  return { x: CX + radius * Math.cos(a), y: CY + radius * Math.sin(a), a, deg: a * 180 / Math.PI + 90 };
+}
+
+function defs() {
+  return `<defs>
+    <pattern id="pNormal" width="10" height="10" patternUnits="userSpaceOnUse">
+      <rect width="10" height="10" fill="#fdfcf4"/>
+      <path d="M5 0 L10 5 L5 10 L0 5 Z" fill="#8fd6c4" opacity=".55"/>
+    </pattern>
+    <pattern id="pSetback" width="8" height="8" patternUnits="userSpaceOnUse">
+      <rect width="8" height="8" fill="#f0786a"/>
+      <path d="M0 2 L4 6 L8 2" stroke="#fdfcf4" stroke-width="1.2" fill="none"/>
+    </pattern>
+    <pattern id="pJump" width="8" height="8" patternUnits="userSpaceOnUse">
+      <rect width="8" height="8" fill="#a6e3a1"/>
+      <path d="M0 2.5 H8 M0 5.5 H8" stroke="#2c8c7e" stroke-width="1.1"/>
+    </pattern>
+    <pattern id="pFinish" width="8" height="8" patternUnits="userSpaceOnUse">
+      <rect width="8" height="8" fill="#f6c444"/>
+      <path d="M0 0 L4 4 L8 0 M0 8 L4 4 L8 8" stroke="#fdfcf4" stroke-width=".9" fill="none" opacity=".8"/>
+    </pattern>
+  </defs>`;
+}
+
+function figure(color) {
+  return `
+    <ellipse cx="0" cy="13" rx="8" ry="2.2" fill="rgba(47,61,74,.2)"/>
+    <path d="M-3.4 5 L-3.8 13 M3.4 5 L3.8 13" stroke="#fdfcf4" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M-3.4 5 L-3.8 13 M3.4 5 L3.8 13" stroke="${INK}" stroke-width=".7" opacity=".5"/>
+    <path d="M-6.2 -1 Q0 -3.2 6.2 -1 L7.6 8 Q0 10.5 -7.6 8 Z" fill="${color}" stroke="${INK}" stroke-width="1.2" stroke-linejoin="round"/>
+    <path d="M-1.2 -1.6 L0 8.6 L1.2 -1.6" fill="#fdfcf4" stroke="${INK}" stroke-width=".8"/>
+    <path d="M-6.2 -1 L-9.6 5.5 M6.2 -1 L8.6 3.5" stroke="${INK}" stroke-width="1.5" stroke-linecap="round"/>
+    <circle cx="0" cy="-7" r="4" fill="#f5d4b0" stroke="${INK}" stroke-width="1.1"/>
+    <ellipse cx="0" cy="-10.4" rx="5" ry="2.4" fill="${INK}"/>
+    <circle cx="0" cy="-12.6" r="1" fill="#fdfcf4"/>
+    <path d="M9 -1.5 L15.5 -21" stroke="${INK}" stroke-width="1.4" stroke-linecap="round"/>
+    <path d="M14.2 -21.4 L19 -23.5 L19.6 -19.8 Z" fill="${INK}" stroke="${INK}" stroke-width=".6" stroke-linejoin="round"/>
+    <circle cx="-13.5" cy="11.5" r="2" fill="#fdfcf4" stroke="${INK}" stroke-width=".8"/>`;
+}
+
+function drawBoard() {
+  let s = defs();
+  s += `<circle cx="${CX}" cy="${CY}" r="${R + 18}" fill="none" stroke="${INK}" stroke-width="1.6"/>`;
+  s += `<circle cx="${CX}" cy="${CY}" r="${R - 22}" fill="none" stroke="${INK}" stroke-width=".8" stroke-dasharray="2 4"/>`;
+  for (let i = 0; i < N; i++) {
+    const { x, y, deg } = tileXY(i, R);
+    let fill = "url(#pNormal)";
+    if (i === 0) fill = "url(#pFinish)";
+    else if (setbacks.has(i)) fill = "url(#pSetback)";
+    else if (jumps.has(i)) fill = "url(#pJump)";
+    s += `<rect x="-11" y="-11" width="22" height="22" rx="1.5" fill="${fill}" stroke="${INK}" stroke-width="1.2" transform="translate(${x} ${y}) rotate(${deg})"/>`;
+  }
+  const f = tileXY(0, R + 40);
+  s += `<text x="${f.x}" y="${f.y}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="bold" letter-spacing="2" fill="${INK}">FINISH</text>`;
+  players.forEach((p, idx) => {
+    const { x, y, a } = tileXY(((p.shown % N) + N) % N, R);
+    const shift = (idx - (players.length - 1) / 2) * 9;
+    const px = x - Math.sin(a) * shift, py = y + Math.cos(a) * shift;
+    s += `<g transform="translate(${px} ${py})">${figure(p.color)}</g>`;
+  });
+  document.getElementById("board").innerHTML = s;
+}
+
+function escapeHTML(s) { return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function renderPlayers() {
+  document.getElementById("players").innerHTML = players.map((p, i) => `
+    <div class="player ${i === turn && !won ? "active" : ""}">
+      <div class="dot" style="background:${p.color}"></div>
+      <div class="pname">${escapeHTML(p.name)}</div>
+      <div class="pmeta">${p.pos}/${FINISH}</div>
+    </div>`).join("");
+}
+
+function log(msg) {
+  document.getElementById("log").insertAdjacentHTML("afterbegin", `<div>${msg}</div>`);
+}
+
+function render() {
+  drawBoard();
+  renderPlayers();
+  document.getElementById("roll").disabled = won || animating;
+  document.getElementById("banner").textContent = won
+    ? `${players[turn].name} got past the top and wins!`
+    : pendingSpecial
+      ? `${players[turn].name} landed on a ${pendingKind}. Roll to move!`
+      : `${players[turn].name}'s turn`;
+}
+
+async function animatePath(p, path) {
+  for (const pos of path) {
+    p.shown = pos;
+    drawBoard();
+    await sleep(STEP_MS);
+  }
+}
+
+// Walk forward n squares. Passing the Finish wins the game.
+async function walkForward(p, n) {
+  const path = [];
+  let cur = p.pos;
+  for (let k = 0; k < n; k++) {
+    cur++;
+    if (cur >= FINISH) { won = true; path.push(FINISH); break; }
+    path.push(cur);
+  }
+  await animatePath(p, path);
+  p.pos = won ? FINISH : cur;
+}
+
+async function rollDice() {
+  if (won || animating) return;
+  if (pendingSpecial) return resolveSpecial();
+  if (rolled) return;
+  animating = true;
+  rolled = true;
+  render();
+
+  const a = 1 + rand(6), b = 1 + rand(6), roll = a + b;
+  document.getElementById("dice").textContent = `${a} + ${b} = ${roll}`;
+  const p = players[turn];
+  log(`<b>${p.name}</b> rolled ${roll}.`);
+
+  await walkForward(p, roll);
+  p.shown = p.pos;
+  afterLanding(p);
+}
+
+// Called after a piece lands. Setbacks and Jumps wait for the player's next roll.
+function afterLanding(p) {
+  if (won) {
+    log(`<b>${p.name} got past the top and wins!</b>`);
+    endTurn();
+    return;
+  }
+  if (setbacks.has(p.pos)) {
+    pendingSpecial = true; pendingKind = "Setback";
+    log(`${p.name} landed on a Setback. Roll to see how far back!`);
+  } else if (jumps.has(p.pos)) {
+    pendingSpecial = true; pendingKind = "Jump";
+    log(`${p.name} landed on a Jump. Roll to see how far forward!`);
+  } else {
+    endTurn();
+    return;
+  }
+  animating = false;
+  render();
+}
+
+// Moving back past Start wraps around the ring to the squares just before the Finish.
+function wrapBack(x) { return x < 0 ? x + N : x; }
+
+async function resolveSpecial() {
+  animating = true;
+  pendingSpecial = false;
+  render();
+
+  const d = 1 + rand(6);
+  const p = players[turn];
+  const start = p.pos;
+  document.getElementById("dice").textContent = `${pendingKind}! Roll ${d}`;
+
+  if (pendingKind === "Setback") {
+    log(`${p.name} rolled ${d} and slides back ${d}.`);
+    const seq = [];
+    for (let k = 1; k <= d; k++) seq.push(wrapBack(start - k));
+    await animatePath(p, seq);
+    p.pos = wrapBack(start - d);
+  } else {
+    log(`${p.name} rolled ${d} and leaps forward ${d}.`);
+    await walkForward(p, d);
+  }
+  p.shown = p.pos;
+  afterLanding(p);
+}
+
+function endTurn() {
+  if (!won) turn = (turn + 1) % players.length;
+  rolled = false;
+  pendingSpecial = false;
+  animating = false;
+  players.forEach(q => q.shown = q.pos);
+  render();
+}
+
+function startGame() {
+  const count = Number(document.querySelector("#setup .picked").dataset.n);
+  const raw = document.getElementById("names").value.split(",").map(s => s.trim()).filter(Boolean);
+  players = Array.from({ length: count }, (_, i) => ({ name: raw[i] || `Player ${i + 1}`, pos: 0, shown: 0, color: COLORS[i] }));
+  generateBoard();
+  turn = 0; won = false; rolled = false; animating = false; pendingSpecial = false;
+  document.getElementById("log").innerHTML = "";
+  document.getElementById("dice").innerHTML = "&nbsp;";
+  document.getElementById("setup").hidden = true;
+  document.getElementById("game").hidden = false;
+  log(`Board built: ${SETBACKS} Setbacks, ${JUMPS} Jumps, ${NORMALS} normal squares. Good luck!`);
+  render();
+}
+
+document.querySelectorAll("#setup [data-n]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#setup [data-n]").forEach(b => b.classList.remove("picked"));
+    btn.classList.add("picked");
+  });
+});
+document.getElementById("start").addEventListener("click", startGame);
+document.getElementById("roll").addEventListener("click", rollDice);
+document.getElementById("restart").addEventListener("click", () => {
+  document.getElementById("setup").hidden = false;
+  document.getElementById("game").hidden = true;
+});
+</script>
+</body>
+</html>
