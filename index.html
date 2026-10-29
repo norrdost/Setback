@@ -48,8 +48,8 @@ button.picked { background:var(--ink); color:var(--bg); }
     <svg id="board" viewBox="0 0 600 660" role="img" aria-label="Game board"></svg>
     <div class="legend">
       <span style="--c:#b5532f">Setback</span>
-      <span style="--c:#9bb08a">Jump</span>
-      <span style="--c:#e0a526">Finish</span>
+      <span style="--c:#9bb08a">Smile</span>
+      <span style="--c:#f6c444">Start/Finish</span>
     </div>
   </div>
 
@@ -80,13 +80,13 @@ button.picked { background:var(--ink); color:var(--bg); }
 </div>
 
 <script>
-const COLORS = ["#f0786a", "#3aaea0", "#f6c444", "#a99be0"];
+const COLORS = ["#2e5aa8", "#8e3b6b", "#6b4f2a", "#7a5cc2"];
 const INK = "#2f3d4a";
-const FINISH = 37;        // ring of 37 squares: square 0 is Start, squares 1-36 are landable, FINISH is the top
+const FINISH = 36;        // ring of 37 squares: square 0 is Start, squares 1-36 are landable, FINISH is the top
 const N = FINISH;
-const SETBACKS = 18;
-const JUMPS = 9;
-const NORMALS = 9;
+const SETBACKS = 21;
+const JUMPS = 6;
+const NORMALS = 8;
 const STEP_MS = 170;
 const CX = 300, CY = 330, R = 200;
 
@@ -99,19 +99,20 @@ let pendingSpecial = false, pendingKind = "";
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 function rand(n) { return Math.floor(Math.random() * n); }
 
-// Jumps and Normals never touch each other. Setbacks can touch anything.
-// Build a row of 36 squares: 18 "free" slots (Jump or Normal) separated by at least one Setback,
-// with one extra Setback inserted at a random point. Then assign Jumps to 9 of the free slots.
+// The 15 non-Setback squares (6 Smiles, 9 Normals) are spaced so that none of them touch.
+// Spacing alternates between 2 and 3 squares around the ring. The three-square gaps (which leave
+// two Setbacks back-to-back) are grouped in the bottom-left arc around 7:30 on the clock.
+const ITEM_SQUARES = [1, 3, 5, 7, 9, 11, 14, 17, 20, 23, 26, 29, 32, 35];
+
 function generateBoard() {
-  let cells = ["N"];
-  for (let i = 0; i < 17; i++) cells.push("S", "N");
-  cells.splice(rand(36), 0, "S");
-  const free = [];
-  cells.forEach((c, i) => { if (c === "N") free.push(i); });
-  for (let i = free.length - 1; i > 0; i--) { const j = rand(i + 1); [free[i], free[j]] = [free[j], free[i]]; }
   setbacks = new Set(); jumps = new Set();
-  cells.forEach((c, i) => { if (c === "S") setbacks.add(i + 1); });
-  free.slice(0, JUMPS).forEach(i => jumps.add(i + 1));
+  for (let t = 1; t < FINISH; t++) setbacks.add(t);
+  const order = ITEM_SQUARES.slice();
+  for (let i = order.length - 1; i > 0; i--) { const j = rand(i + 1); [order[i], order[j]] = [order[j], order[i]]; }
+  order.forEach((t, i) => {
+    setbacks.delete(t);
+    if (i < JUMPS) jumps.add(t);   // the rest stay as Normal squares
+  });
 }
 
 function tileXY(index, radius) {
@@ -140,20 +141,32 @@ function defs() {
   </defs>`;
 }
 
-function figure(color) {
-  return `
+function figure(color, kind) {
+  const base = `
     <ellipse cx="0" cy="13" rx="8" ry="2.2" fill="rgba(47,61,74,.2)"/>
-    <path d="M-3.4 5 L-3.8 13 M3.4 5 L3.8 13" stroke="#fdfcf4" stroke-width="2.6" stroke-linecap="round"/>
-    <path d="M-3.4 5 L-3.8 13 M3.4 5 L3.8 13" stroke="${INK}" stroke-width=".7" opacity=".5"/>
-    <path d="M-6.2 -1 Q0 -3.2 6.2 -1 L7.6 8 Q0 10.5 -7.6 8 Z" fill="${color}" stroke="${INK}" stroke-width="1.2" stroke-linejoin="round"/>
-    <path d="M-1.2 -1.6 L0 8.6 L1.2 -1.6" fill="#fdfcf4" stroke="${INK}" stroke-width=".8"/>
-    <path d="M-6.2 -1 L-9.6 5.5 M6.2 -1 L8.6 3.5" stroke="${INK}" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M-3.2 5 L-3.6 13 M3.2 5 L3.6 13" stroke="#8a7a5c" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M-6 -1 Q0 -3 6 -1 L7 9 Q0 11 -7 9 Z" fill="${color}" stroke="${INK}" stroke-width="1.2" stroke-linejoin="round"/>
+    <path d="M-6 -1 L-9.5 6" stroke="${INK}" stroke-width="1.5" stroke-linecap="round"/>
     <circle cx="0" cy="-7" r="4" fill="#f5d4b0" stroke="${INK}" stroke-width="1.1"/>
-    <ellipse cx="0" cy="-10.4" rx="5" ry="2.4" fill="${INK}"/>
-    <circle cx="0" cy="-12.6" r="1" fill="#fdfcf4"/>
-    <path d="M9 -1.5 L15.5 -21" stroke="${INK}" stroke-width="1.4" stroke-linecap="round"/>
-    <path d="M14.2 -21.4 L19 -23.5 L19.6 -19.8 Z" fill="${INK}" stroke="${INK}" stroke-width=".6" stroke-linejoin="round"/>
-    <circle cx="-13.5" cy="11.5" r="2" fill="#fdfcf4" stroke="${INK}" stroke-width=".8"/>`;
+    <path d="M-4.6 -6 Q-4.6 -11.6 0 -11.6 Q4.6 -11.6 4.6 -6 L4.6 -5 L-4.6 -5 Z" fill="#b9c2c8" stroke="${INK}" stroke-width="1"/>
+    <path d="M0 -10.5 L0 -5" stroke="${INK}" stroke-width="1"/>`;
+  let extra = "";
+  if (kind === 0) {   // pikeman
+    extra = `<path d="M8 13 L11 -24" stroke="#8a6a3f" stroke-width="1.4" stroke-linecap="round"/>
+      <path d="M10 -24 L11 -30 L12 -24 Z" fill="#b9c2c8" stroke="${INK}" stroke-width=".7"/>
+      <path d="M11 -22 L17 -20 L11 -18 Z" fill="${color}" stroke="${INK}" stroke-width=".6"/>`;
+  } else if (kind === 1) {   // crossbowman
+    extra = `<path d="M-1 2 L13 0" stroke="#8a6a3f" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M12 -7 Q15 0 12 7" fill="none" stroke="${INK}" stroke-width="1.2"/>`;
+  } else if (kind === 2) {   // shield-bearer with sword
+    extra = `<path d="M-13 -2 L-7 -2 L-7 6 Q-10 10 -13 6 Z" fill="${color}" stroke="${INK}" stroke-width="1"/>
+      <path d="M-10 0 L-10 7" stroke="#fdfcf4" stroke-width="1"/>
+      <path d="M7 8 L13 -6" stroke="#b9c2c8" stroke-width="1.4" stroke-linecap="round"/>`;
+  } else {   // archer
+    extra = `<path d="M13 -10 Q18 2 13 12" fill="none" stroke="#8a6a3f" stroke-width="1.4"/>
+      <path d="M13 -10 L13 12" stroke="${INK}" stroke-width=".6"/>`;
+  }
+  return base + extra;
 }
 
 function drawBoard() {
@@ -166,15 +179,18 @@ function drawBoard() {
     if (i === 0) fill = "url(#pFinish)";
     else if (setbacks.has(i)) fill = "url(#pSetback)";
     else if (jumps.has(i)) fill = "url(#pJump)";
-    s += `<rect x="-11" y="-11" width="22" height="22" rx="1.5" fill="${fill}" stroke="${INK}" stroke-width="1.2" transform="translate(${x} ${y}) rotate(${deg})"/>`;
+    let deco = "";
+    if (setbacks.has(i)) deco = `<text x="0" y="2" text-anchor="middle" dominant-baseline="middle" font-family="'Palatino Linotype', Palatino, Georgia, serif" font-style="italic" font-weight="bold" font-size="34" fill="#fdfcf4" stroke="${INK}" stroke-width="1" paint-order="stroke">S</text>`;
+    else if (jumps.has(i)) deco = `<circle cx="0" cy="0" r="8" fill="#fff8d6" stroke="${INK}" stroke-width="1.2"/><circle cx="-3" cy="-2.5" r="1.3" fill="${INK}"/><circle cx="3" cy="-2.5" r="1.3" fill="${INK}"/><path d="M-4 2 Q0 6 4 2" fill="none" stroke="${INK}" stroke-width="1.4" stroke-linecap="round"/>`;
+    s += `<g transform="translate(${x} ${y}) rotate(${deg})"><rect x="-11" y="-11" width="22" height="22" rx="1.5" fill="${fill}" stroke="${INK}" stroke-width="1.2"/>${deco}</g>`;
   }
   const f = tileXY(0, R + 40);
-  s += `<text x="${f.x}" y="${f.y}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="bold" letter-spacing="2" fill="${INK}">FINISH</text>`;
+  s += `<text x="${f.x}" y="${f.y}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="bold" letter-spacing="2" fill="${INK}">START/FINISH</text>`;
   players.forEach((p, idx) => {
     const { x, y, a } = tileXY(((p.shown % N) + N) % N, R);
-    const shift = (idx - (players.length - 1) / 2) * 9;
+    const shift = (idx - (players.length - 1) / 2) * 12;
     const px = x - Math.sin(a) * shift, py = y + Math.cos(a) * shift;
-    s += `<g transform="translate(${px} ${py})">${figure(p.color)}</g>`;
+    s += `<g transform="translate(${px} ${py}) scale(1.35)">${figure(p.color, p.kind)}</g>`;
   });
   document.getElementById("board").innerHTML = s;
 }
@@ -186,7 +202,7 @@ function renderPlayers() {
     <div class="player ${i === turn && !won ? "active" : ""}">
       <div class="dot" style="background:${p.color}"></div>
       <div class="pname">${escapeHTML(p.name)}</div>
-      <div class="pmeta">${p.pos}/${FINISH}</div>
+      <div class="pmeta">${p.pos}/${FINISH} · ${p.setbacks} setback${p.setbacks === 1 ? "" : "s"} · ${p.smiles} smile${p.smiles === 1 ? "" : "s"}</div>
     </div>`).join("");
 }
 
@@ -251,12 +267,14 @@ function afterLanding(p) {
     endTurn();
     return;
   }
-  if (setbacks.has(p.pos)) {
+  if (setbacks.has(sq(p.pos))) {
+    p.setbacks++;
     pendingSpecial = true; pendingKind = "Setback";
     log(`${p.name} landed on a Setback. Roll to see how far back!`);
-  } else if (jumps.has(p.pos)) {
-    pendingSpecial = true; pendingKind = "Jump";
-    log(`${p.name} landed on a Jump. Roll to see how far forward!`);
+  } else if (jumps.has(sq(p.pos))) {
+    p.smiles++;
+    pendingSpecial = true; pendingKind = "Smile";
+    log(`${p.name} landed on a Smile. Roll to see how far forward!`);
   } else {
     endTurn();
     return;
@@ -265,8 +283,10 @@ function afterLanding(p) {
   render();
 }
 
-// Moving back past Start wraps around the ring to the squares just before the Finish.
-function wrapBack(x) { return x < 0 ? x + N : x; }
+// Progress is tracked linearly: 0 is Start, FINISH is the Start/Finish line reached going forward.
+// Going back past Start makes progress negative, so the piece must travel all the way around again.
+// sq() maps progress to the ring square it sits on.
+function sq(x) { return ((x % N) + N) % N; }
 
 async function resolveSpecial() {
   animating = true;
@@ -281,11 +301,11 @@ async function resolveSpecial() {
   if (pendingKind === "Setback") {
     log(`${p.name} rolled ${d} and slides back ${d}.`);
     const seq = [];
-    for (let k = 1; k <= d; k++) seq.push(wrapBack(start - k));
+    for (let k = 1; k <= d; k++) seq.push(start - k);
     await animatePath(p, seq);
-    p.pos = wrapBack(start - d);
+    p.pos = start - d;
   } else {
-    log(`${p.name} rolled ${d} and leaps forward ${d}.`);
+    log(`${p.name} rolled ${d} and moves forward ${d}.`);
     await walkForward(p, d);
   }
   p.shown = p.pos;
@@ -304,14 +324,14 @@ function endTurn() {
 function startGame() {
   const count = Number(document.querySelector("#setup .picked").dataset.n);
   const raw = document.getElementById("names").value.split(",").map(s => s.trim()).filter(Boolean);
-  players = Array.from({ length: count }, (_, i) => ({ name: raw[i] || `Player ${i + 1}`, pos: 0, shown: 0, color: COLORS[i] }));
+  players = Array.from({ length: count }, (_, i) => ({ name: raw[i] || `Player ${i + 1}`, pos: 0, shown: 0, color: COLORS[i], kind: rand(4), setbacks: 0, smiles: 0 }));
   generateBoard();
   turn = 0; won = false; rolled = false; animating = false; pendingSpecial = false;
   document.getElementById("log").innerHTML = "";
   document.getElementById("dice").innerHTML = "&nbsp;";
   document.getElementById("setup").hidden = true;
   document.getElementById("game").hidden = false;
-  log(`Board built: ${SETBACKS} Setbacks, ${JUMPS} Jumps, ${NORMALS} normal squares. Good luck!`);
+  log(`Board built: ${SETBACKS} Setbacks, ${JUMPS} Smiles, ${NORMALS} normal squares. Good luck!`);
   render();
 }
 
